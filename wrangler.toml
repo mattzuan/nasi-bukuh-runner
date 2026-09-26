@@ -1,0 +1,7 @@
+name = "nasi-bukuh-runner-api"
+main = "src/index.js"
+compatibility_date = "2026-09-25"
+
+[[kv_namespaces]]
+binding = "LOCATIONS"
+id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
