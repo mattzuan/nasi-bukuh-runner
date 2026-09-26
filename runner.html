@@ -95,38 +95,62 @@ async function sendLocation(position) {
   $("speed").textContent = c.speed == null ? "-" : `${(c.speed * 3.6).toFixed(1)} km/h`;
   $("gpsUpdate").textContent = fmtTime();
 
+```js
+try {
+  const response = await fetch(CONFIG.API_URL + "/api/location", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + token
+    },
+    body: JSON.stringify({
+      runnerId,
+      latitude: c.latitude,
+      longitude: c.longitude,
+      accuracy: c.accuracy || 0,
+      speed: c.speed || 0,
+      heading: c.heading || 0
+    })
+  });
+
+  // Baca response sebagai text dahulu supaya kita boleh
+  // nampak jika server pulangkan response kosong / bukan JSON.
+  const responseText = await response.text();
+
+  console.log("SERVER STATUS:", response.status);
+  console.log("SERVER RESPONSE:", responseText);
+
+  let result;
+
   try {
-    const response = await fetch(CONFIG.API_URL + "/api/location", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + token
-      },
-      body: JSON.stringify({
-        runnerId,
-        latitude: c.latitude,
-        longitude: c.longitude,
-        accuracy: c.accuracy || 0,
-        speed: c.speed || 0,
-        heading: c.heading || 0
-      })
-    });
-
-    const result = await response.json();
-
-    if (!response.ok || !result.success) {
-      throw new Error(result.error || "Server rejected location");
-    }
-
-    $("serverUpdate").textContent = fmtTime();
-    setStatus("🟢 ONLINE — TRACKING", "online");
-    clearError();
-  } catch (err) {
-    console.error(err);
-    setStatus("🟠 GPS AKTIF — SERVER ERROR", "waiting");
-    showError("Lokasi GPS dapat dibaca tetapi gagal dihantar ke server: " + err.message);
+    result = JSON.parse(responseText);
+  } catch (parseError) {
+    throw new Error(
+      "Server tidak pulangkan JSON. HTTP " +
+      response.status +
+      " | Response: " +
+      (responseText || "[KOSONG]")
+    );
   }
+
+  if (!response.ok || !result.success) {
+    throw new Error(result.error || "Server rejected location");
+  }
+
+  $("serverUpdate").textContent = fmtTime();
+  setStatus("🟢 ONLINE — TRACKING", "online");
+  clearError();
+
+} catch (err) {
+  console.error(err);
+  setStatus("🟠 GPS AKTIF — SERVER ERROR", "waiting");
+  showError(
+    "Lokasi GPS dapat dibaca tetapi gagal dihantar ke server: " +
+    err.message
+  );
 }
+```
+
 
 function gpsError(error) {
   const messages = {
