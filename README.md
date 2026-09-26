@@ -25,7 +25,7 @@ nasi-bukuh-runner/
 ```
 1. Cloudflare KV
 Create KV namespace, contoh nama:
-`NASI\_BUKUK\_RUNNER`
+`NASI\_BUKUH\_RUNNER`
 Copy KV Namespace ID.
 Edit:
 `worker/wrangler.toml`
