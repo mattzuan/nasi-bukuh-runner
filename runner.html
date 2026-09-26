@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#ffd400">
+  <title>NASI BUKUH — Runner</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">🍚 NASI BUKUH</div>
+    <div class="badge">RUNNER</div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h1>Runner Tracking</h1>
+      <p class="muted">Buka halaman ini semasa delivery. Jangan tutup halaman sehingga selesai.</p>
+
+      <label for="runnerId">Runner ID</label>
+      <input id="runnerId" value="R001" autocomplete="off">
+
+      <label for="runnerToken">Runner Token</label>
+      <input id="runnerToken" type="password" placeholder="Token runner" autocomplete="off">
+
+      <div id="statusBox" class="status offline">⚫ OFFLINE</div>
+
+      <button id="startBtn" class="btn primary" type="button">🟢 MULA DELIVERY</button>
+      <button id="stopBtn" class="btn dark" type="button" disabled>⛔ STOP DELIVERY</button>
+
+      <div id="errorBox" class="error hidden"></div>
+
+      <div class="info">
+        <div><span>Latitude</span><strong id="lat">-</strong></div>
+        <div><span>Longitude</span><strong id="lng">-</strong></div>
+        <div><span>Accuracy</span><strong id="accuracy">-</strong></div>
+        <div><span>Speed</span><strong id="speed">-</strong></div>
+        <div><span>GPS Update</span><strong id="gpsUpdate">-</strong></div>
+        <div><span>Server Update</span><strong id="serverUpdate">-</strong></div>
+      </div>
+    </section>
+
+    <section class="card small">
+      <strong>Tip</strong>
+      <p class="muted">Untuk V1, biarkan skrin/browser tracking aktif semasa delivery. Sesetengah telefon akan menghentikan GPS bila browser masuk background.</p>
+    </section>
+  </main>
+</div>
+
+<script>
+const CONFIG = {
+  API_URL: "PASTE_WORKER_URL_HERE"
+};
+
+let watchId = null;
+let active = false;
+let lastSentAt = 0;
+const MIN_SEND_INTERVAL_MS = 10000;
+
+const $ = (id) => document.getElementById(id);
+
+function setStatus(text, type) {
+  $("statusBox").textContent = text;
+  $("statusBox").className = "status " + type;
+}
+
+function showError(message) {
+  $("errorBox").textContent = message;
+  $("errorBox").classList.remove("hidden");
+}
+
+function clearError() {
+  $("errorBox").textContent = "";
+  $("errorBox").classList.add("hidden");
+}
+
+function fmtTime(date = new Date()) {
+  return date.toLocaleTimeString("ms-MY", { hour12: false });
+}
+
+async function sendLocation(position) {
+  const runnerId = $("runnerId").value.trim();
+  const token = $("runnerToken").value.trim();
+
+  const now = Date.now();
+  if (now - lastSentAt < MIN_SEND_INTERVAL_MS) return;
+  lastSentAt = now;
+
+  const c = position.coords;
+  $("lat").textContent = c.latitude.toFixed(6);
+  $("lng").textContent = c.longitude.toFixed(6);
+  $("accuracy").textContent = `${Math.round(c.accuracy || 0)} m`;
+  $("speed").textContent = c.speed == null ? "-" : `${(c.speed * 3.6).toFixed(1)} km/h`;
+  $("gpsUpdate").textContent = fmtTime();
+
+  try {
+    const response = await fetch(CONFIG.API_URL + "/api/location", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token
+      },
+      body: JSON.stringify({
+        runnerId,
+        latitude: c.latitude,
+        longitude: c.longitude,
+        accuracy: c.accuracy || 0,
+        speed: c.speed || 0,
+        heading: c.heading || 0
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || "Server rejected location");
+    }
+
+    $("serverUpdate").textContent = fmtTime();
+    setStatus("🟢 ONLINE — TRACKING", "online");
+    clearError();
+  } catch (err) {
+    console.error(err);
+    setStatus("🟠 GPS AKTIF — SERVER ERROR", "waiting");
+    showError("Lokasi GPS dapat dibaca tetapi gagal dihantar ke server: " + err.message);
+  }
+}
+
+function gpsError(error) {
+  const messages = {
+    1: "Permission GPS ditolak. Benarkan Location untuk browser.",
+    2: "Lokasi tidak dapat ditentukan. Pastikan GPS/Location telefon dihidupkan.",
+    3: "GPS mengambil terlalu lama. Cuba lagi di kawasan terbuka."
+  };
+  setStatus("🔴 GPS ERROR", "offline");
+  showError(messages[error.code] || "GPS error tidak diketahui.");
+}
+
+function startTracking() {
+  clearError();
+
+  const runnerId = $("runnerId").value.trim();
+  const token = $("runnerToken").value.trim();
+
+  if (!runnerId || !token) {
+    showError("Masukkan Runner ID dan Runner Token.");
+    return;
+  }
+
+  if (!CONFIG.API_URL || CONFIG.API_URL.includes("PASTE_WORKER")) {
+    showError("API URL belum ditetapkan dalam runner.html.");
+    return;
+  }
+
+  if (!navigator.geolocation) {
+    showError("Browser ini tidak menyokong Geolocation.");
+    return;
+  }
+
+  active = true;
+  $("startBtn").disabled = true;
+  $("stopBtn").disabled = false;
+  setStatus("🟡 MENCARI GPS...", "waiting");
+
+  watchId = navigator.geolocation.watchPosition(
+    sendLocation,
+    gpsError,
+    {
+      enableHighAccuracy: true,
+      maximumAge: 10000,
+      timeout: 20000
+    }
+  );
+}
+
+async function stopTracking() {
+  active = false;
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+
+  const runnerId = $("runnerId").value.trim();
+  const token = $("runnerToken").value.trim();
+
+  if (runnerId && token && CONFIG.API_URL && !CONFIG.API_URL.includes("PASTE_WORKER")) {
+    try {
+      await fetch(CONFIG.API_URL + "/api/stop", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + token
+        },
+        body: JSON.stringify({ runnerId })
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  $("startBtn").disabled = false;
+  $("stopBtn").disabled = true;
+  setStatus("⚫ OFFLINE", "offline");
+}
+
+$("startBtn").addEventListener("click", startTracking);
+$("stopBtn").addEventListener("click", stopTracking);
+window.addEventListener("beforeunload", () => {
+  if (active && watchId !== null) navigator.geolocation.clearWatch(watchId);
+});
+</script>
+</body>
+</html>
