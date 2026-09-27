@@ -89,6 +89,7 @@ async function sendLocation(position) {
   lastSentAt = now;
 
   const c = position.coords;
+
   $("lat").textContent = c.latitude.toFixed(6);
   $("lng").textContent = c.longitude.toFixed(6);
   $("accuracy").textContent = `${Math.round(c.accuracy || 0)} m`;
@@ -112,19 +113,40 @@ async function sendLocation(position) {
       })
     });
 
-    const result = await response.json();
+    // Baca response sebagai TEXT dahulu.
+    // Ini mengelakkan "Unexpected end of JSON input"
+    // jika server pulangkan response kosong atau bukan JSON.
+    const responseText = await response.text();
+
+    let result = {};
+
+    try {
+      result = responseText ? JSON.parse(responseText) : {};
+    } catch (parseError) {
+      throw new Error(
+        `Server response tidak sah (${response.status}): ${responseText || "KOSONG"}`
+      );
+    }
 
     if (!response.ok || !result.success) {
-      throw new Error(result.error || "Server rejected location");
+      throw new Error(
+        result.error || `Server rejected location (${response.status})`
+      );
     }
 
     $("serverUpdate").textContent = fmtTime();
     setStatus("🟢 ONLINE — TRACKING", "online");
     clearError();
+
   } catch (err) {
-    console.error(err);
+    console.error("LOCATION ERROR:", err);
+
     setStatus("🟠 GPS AKTIF — SERVER ERROR", "waiting");
-    showError("Lokasi GPS dapat dibaca tetapi gagal dihantar ke server: " + err.message);
+
+    showError(
+      "Lokasi GPS dapat dibaca tetapi gagal dihantar ke server: " +
+      err.message
+    );
   }
 }
 
@@ -134,6 +156,7 @@ function gpsError(error) {
     2: "Lokasi tidak dapat ditentukan. Pastikan GPS/Location telefon dihidupkan.",
     3: "GPS mengambil terlalu lama. Cuba lagi di kawasan terbuka."
   };
+
   setStatus("🔴 GPS ERROR", "offline");
   showError(messages[error.code] || "GPS error tidak diketahui.");
 }
@@ -177,6 +200,7 @@ function startTracking() {
 
 async function stopTracking() {
   active = false;
+
   if (watchId !== null) {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
@@ -185,9 +209,14 @@ async function stopTracking() {
   const runnerId = $("runnerId").value.trim();
   const token = $("runnerToken").value.trim();
 
-  if (runnerId && token && CONFIG.API_URL && !CONFIG.API_URL.includes("PASTE_WORKER")) {
+  if (
+    runnerId &&
+    token &&
+    CONFIG.API_URL &&
+    !CONFIG.API_URL.includes("PASTE_WORKER")
+  ) {
     try {
-      await fetch(CONFIG.API_URL + "/api/stop", {
+      const response = await fetch(CONFIG.API_URL + "/api/stop", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -195,8 +224,23 @@ async function stopTracking() {
         },
         body: JSON.stringify({ runnerId })
       });
+
+      // Jangan paksa response.json() di sini.
+      // Server mungkin tidak pulangkan JSON semasa stop.
+      const responseText = await response.text();
+
+      if (!response.ok) {
+        console.warn(
+          "STOP SERVER ERROR:",
+          response.status,
+          responseText
+        );
+      } else {
+        console.log("STOP SERVER RESPONSE:", responseText);
+      }
+
     } catch (e) {
-      console.error(e);
+      console.error("STOP ERROR:", e);
     }
   }
 
@@ -207,8 +251,11 @@ async function stopTracking() {
 
 $("startBtn").addEventListener("click", startTracking);
 $("stopBtn").addEventListener("click", stopTracking);
+
 window.addEventListener("beforeunload", () => {
-  if (active && watchId !== null) navigator.geolocation.clearWatch(watchId);
+  if (active && watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+  }
 });
 </script>
 </body>
